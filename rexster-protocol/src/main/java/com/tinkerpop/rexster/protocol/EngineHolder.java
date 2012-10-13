@@ -4,9 +4,7 @@ import javax.script.ScriptEngine;
 import javax.script.ScriptEngineFactory;
 
 /**
- * Holder class for different script engines.  It keeps track of the number of scripts that have been
- * evaluated against it and re-instantiates it to clear memory that it may hang on to.  This is an
- * issue that is prevalent in gremlin-groovy.  Unsure if it carries over to other implementations.
+ * Holder class for different script engines.
  *
  * @author Stephen Mallette (http://stephen.genoprime.com)
  */
@@ -16,11 +14,8 @@ public class EngineHolder {
     private final String languageVersion;
     private final String engineName;
     private final String engineVersion;
-    private final ScriptEngineFactory factory;
-    public static final int ENGINE_RESET_THRESHOLD = 1000;
 
     private ScriptEngine engine;
-    private int numberOfScriptsEvaluated = 0;
 
     public EngineHolder(final ScriptEngineFactory factory) {
         this.languageName = factory.getLanguageName();
@@ -28,7 +23,10 @@ public class EngineHolder {
         this.engineName = factory.getEngineName();
         this.engineVersion = factory.getEngineVersion();
         this.engine = factory.getScriptEngine();
-        this.factory = factory;
+    }
+
+    public String getLanguageVersion() {
+        return languageVersion;
     }
 
     public String getEngineName() {
@@ -44,16 +42,6 @@ public class EngineHolder {
     }
 
     public ScriptEngine getEngine() {
-        if (numberOfScriptsEvaluated >= ENGINE_RESET_THRESHOLD) {
-            // IMPORTANT: assumes that the factory implementation is not pooling engine instances
-            this.engine = this.factory.getScriptEngine();
-            numberOfScriptsEvaluated = 1;
-        } else {
-            numberOfScriptsEvaluated++;
-        }
-
         return this.engine;
     }
-
-
 }
