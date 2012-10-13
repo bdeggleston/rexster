@@ -21,6 +21,7 @@ import com.tinkerpop.rexster.servlet.RexsterStaticHttpHandler;
 import org.apache.commons.configuration.HierarchicalConfiguration;
 import org.apache.commons.configuration.XMLConfiguration;
 import org.apache.log4j.Logger;
+import org.glassfish.grizzly.IOStrategy;
 import org.glassfish.grizzly.http.server.HttpServer;
 import org.glassfish.grizzly.http.server.NetworkListener;
 import org.glassfish.grizzly.http.server.ServerConfiguration;
@@ -49,19 +50,22 @@ public class HttpRexsterServer implements RexsterServer {
     private final int maxKernalThreadPoolSize;
     private final int coreKernalThreadPoolSize;
     private final boolean enableJmx;
+    private final String ioStrategy;
     private final HttpServer httpServer;
 
     public HttpRexsterServer(final XMLConfiguration properties) {
         this.properties = properties;
-        rexsterServerPort = properties.getInteger("rexster-server-port", new Integer(RexsterSettings.DEFAULT_HTTP_PORT));
-        rexsterServerHost = properties.getString("rexster-server-host", "0.0.0.0");
-        webRootPath = properties.getString("web-root", RexsterSettings.DEFAULT_WEB_ROOT_PATH);
-        baseUri = properties.getString("base-uri", RexsterSettings.DEFAULT_BASE_URI);
-        coreWorkerThreadPoolSize = properties.getInt("thread-pool.worker.core-size", 8);
-        maxWorkerThreadPoolSize = properties.getInt("thread-pool.worker.max-size", 8);
-        coreKernalThreadPoolSize = properties.getInt("thread-pool.kernal.core-size", 4);
-        maxKernalThreadPoolSize = properties.getInt("thread-pool.kernal.max-size", 4);
-        enableJmx = properties.getBoolean("enable-jmx", false);
+        rexsterServerPort = properties.getInteger("http.server-port", new Integer(RexsterSettings.DEFAULT_HTTP_PORT));
+        rexsterServerHost = properties.getString("http.server-host", "0.0.0.0");
+        webRootPath = properties.getString("http.web-root", RexsterSettings.DEFAULT_WEB_ROOT_PATH);
+        baseUri = properties.getString("http.base-uri", RexsterSettings.DEFAULT_BASE_URI);
+        coreWorkerThreadPoolSize = properties.getInt("http.thread-pool.worker.core-size", 8);
+        maxWorkerThreadPoolSize = properties.getInt("http.thread-pool.worker.max-size", 8);
+        coreKernalThreadPoolSize = properties.getInt("http.thread-pool.kernal.core-size", 4);
+        maxKernalThreadPoolSize = properties.getInt("http.thread-pool.kernal.max-size", 4);
+        enableJmx = properties.getBoolean("http.enable-jmx", false);
+        this.ioStrategy = properties.getString("http.io-strategy", "worker");
+
         this.httpServer = new HttpServer();
     }
 
@@ -77,6 +81,11 @@ public class HttpRexsterServer implements RexsterServer {
         deployDogHouse(application);
 
         final NetworkListener listener = configureNetworkListener();
+        final IOStrategy strategy = GrizzlyIoStrategyFactory.createIoStrategy(this.ioStrategy);
+
+        logger.info(String.format("Using %s IOStrategy for HTTP/REST.", strategy.getClass().getName()));
+
+        configureNetworkListener().getTransport().setIOStrategy(strategy);
         this.httpServer.addListener(listener);
         this.httpServer.getServerConfiguration().setJmxEnabled(enableJmx);
         this.httpServer.start();
@@ -108,7 +117,7 @@ public class HttpRexsterServer implements RexsterServer {
         rc.getSingletons().add(new SingletonTypeInjectableProvider<Context, RexsterApplication>(
                 RexsterApplication.class, application){});
 
-        final String defaultCharacterEncoding = properties.getString("character-set", "ISO-8859-1");
+        final String defaultCharacterEncoding = properties.getString("http.character-set", "ISO-8859-1");
         rc.getContainerResponseFilters().add(new HeaderResponseFilter(defaultCharacterEncoding));
 
         final HierarchicalConfiguration securityConfiguration = properties.configurationAt("security.authentication");
