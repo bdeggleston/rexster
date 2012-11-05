@@ -59,7 +59,7 @@ public class ScriptFilter extends BaseFilter {
                 final Bindings bindings = scriptEngine.createBindings();
                 bindings.put(Tokens.REXPRO_REXSTER_CONTEXT, this.rexsterApplication);
 
-                final Object result = engineHolder.getEngine().eval(specificMessage.Script, bindings);
+                final Object result = scriptEngine.eval(specificMessage.Script, bindings);
 
                 final MsgPackScriptResponseMessage msgPackScriptResponseMessage = new MsgPackScriptResponseMessage();
                 msgPackScriptResponseMessage.Flag = MessageFlag.SCRIPT_RESPONSE_COMPLETE_MESSAGE;
@@ -71,7 +71,15 @@ public class ScriptFilter extends BaseFilter {
 
                 return ctx.getStopAction();
             } catch (ScriptException se) {
-                logger.error(se);
+                logger.warn("Could not process script [" + specificMessage.Script + "] for language ["
+                        + specificMessage.LanguageName + "] on session [" + message.Session
+                        + "] and request [" + message.Request + "]");
+
+                ctx.write(MessageUtil.createErrorResponse(message.Request, RexProMessage.EMPTY_SESSION_AS_BYTES,
+                        MessageFlag.ERROR_SCRIPT_FAILURE, String.format(MessageTokens.ERROR_IN_SCRIPT_PROCESSING,
+                        specificMessage.LanguageName, se.getMessage())));
+
+                return ctx.getStopAction();
             } catch (ClassNotFoundException cnfe) {
                 logger.error(cnfe);
             } catch (Exception e) {
