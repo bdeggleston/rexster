@@ -2,31 +2,16 @@ package com.tinkerpop.rexster.protocol;
 
 import com.tinkerpop.rexster.Tokens;
 import com.tinkerpop.rexster.client.RexsterClient;
-import com.tinkerpop.rexster.protocol.msg.MessageFlag;
-import com.tinkerpop.rexster.protocol.msg.MsgPackScriptResponseMessage;
-import com.tinkerpop.rexster.protocol.msg.ScriptRequestMessage;
-import org.msgpack.MessagePack;
-import org.msgpack.template.IntegerTemplate;
 import org.msgpack.type.Value;
-import org.msgpack.unpacker.BufferUnpacker;
-import org.msgpack.unpacker.Converter;
-import org.msgpack.unpacker.UnpackerIterator;
-import sun.management.snmp.jvminstr.JvmThreadInstanceEntryImpl;
-
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-
-import static org.msgpack.template.Templates.tMap;
-import static org.msgpack.template.Templates.TString;
-import static org.msgpack.template.Templates.TValue;
 
 /**
  * A bit of an experiment.
  */
 public class TryRexProSessionless {
+
+    private static int cycle = 0;
 
     public static void main(final String[] args) throws Exception {
         int c = Integer.parseInt(args[1]);
@@ -49,9 +34,8 @@ public class TryRexProSessionless {
 
         final long start = System.currentTimeMillis();
         long checkpoint = System.currentTimeMillis();
-        int cycle = 0;
 
-        while ((start - checkpoint) < exerciseTime) {
+        while ((System.currentTimeMillis() - start) < exerciseTime) {
             cycle++;
             System.out.println("Exercise cycle: " + cycle);
 
@@ -67,11 +51,15 @@ public class TryRexProSessionless {
                     counter++;
                 }
 
-                long end = System.currentTimeMillis() - checkpoint;
+                final long end = System.currentTimeMillis() - checkpoint;
                 System.out.println((checkpoint - start) + ":" + end);
                 System.out.println(counter / (end / 1000));
             } catch (Exception ex) {
                 ex.printStackTrace();
+                if (ex.getCause() != null) {
+                    System.out.println("Inner Exception follows........");
+                    ex.getCause().printStackTrace();
+                }
             }
         }
     }
