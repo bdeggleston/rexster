@@ -24,7 +24,6 @@ import org.msgpack.unpacker.Unpacker;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 
 /**
  * Handles incoming/outgoing RexProMessage instances.
@@ -69,38 +68,43 @@ public class RexProMessageFilter extends BaseFilter {
 
         final ByteArrayInputStream in = new ByteArrayInputStream(messageAsBytes);
         final Unpacker unpacker = msgpack.createUnpacker(in);
-        unpacker.setArraySizeLimit(Integer.MAX_VALUE);
-        unpacker.setMapSizeLimit(Integer.MAX_VALUE);
-        unpacker.setRawSizeLimit(Integer.MAX_VALUE);
 
-        RexProMessage message = null;
-        if (messageType == MessageType.SCRIPT_REQUEST) {
-            message = unpacker.read(ScriptRequestMessage.class);
-        } else if (messageType == MessageType.SESSION_REQUEST) {
-            message = unpacker.read(SessionRequestMessage.class);
-        } else if (messageType == MessageType.CONSOLE_SCRIPT_RESPONSE) {
-            message = unpacker.read(ConsoleScriptResponseMessage.class);
-        } else if (messageType == MessageType.SESSION_RESPONSE) {
-            message = unpacker.read(SessionResponseMessage.class);
-        } else if (messageType == MessageType.ERROR) {
-            message = unpacker.read(ErrorResponseMessage.class);
-        } else if (messageType == MessageType.MSGPACK_SCRIPT_RESPONSE) {
-            message = unpacker.read(MsgPackScriptResponseMessage.class);
+        try {
+            unpacker.setArraySizeLimit(Integer.MAX_VALUE);
+            unpacker.setMapSizeLimit(Integer.MAX_VALUE);
+            unpacker.setRawSizeLimit(Integer.MAX_VALUE);
+
+            RexProMessage message = null;
+            if (messageType == MessageType.SCRIPT_REQUEST) {
+                message = unpacker.read(ScriptRequestMessage.class);
+            } else if (messageType == MessageType.SESSION_REQUEST) {
+                message = unpacker.read(SessionRequestMessage.class);
+            } else if (messageType == MessageType.CONSOLE_SCRIPT_RESPONSE) {
+                message = unpacker.read(ConsoleScriptResponseMessage.class);
+            } else if (messageType == MessageType.SESSION_RESPONSE) {
+                message = unpacker.read(SessionResponseMessage.class);
+            } else if (messageType == MessageType.ERROR) {
+                message = unpacker.read(ErrorResponseMessage.class);
+            } else if (messageType == MessageType.MSGPACK_SCRIPT_RESPONSE) {
+                message = unpacker.read(MsgPackScriptResponseMessage.class);
+            }
+
+            if (message == null) {
+                logger.warn("Message did not match an expected type.");
+
+                ctx.write(MessageUtil.createErrorResponse(RexProMessage.EMPTY_REQUEST_AS_BYTES,
+                        RexProMessage.EMPTY_SESSION_AS_BYTES, MessageFlag.ERROR_MESSAGE_VALIDATION,
+                        MessageTokens.ERROR_UNEXPECTED_MESSAGE_TYPE));
+            }
+
+            ctx.setMessage(message);
+
+            sourceBuffer.tryDispose();
+
+            return ctx.getInvokeAction(remainder);
+        } finally {
+            unpacker.close();
         }
-
-        if (message == null) {
-            logger.warn("Message did not match an expected type.");
-
-            ctx.write(MessageUtil.createErrorResponse(RexProMessage.EMPTY_REQUEST_AS_BYTES,
-                    RexProMessage.EMPTY_SESSION_AS_BYTES, MessageFlag.ERROR_MESSAGE_VALIDATION,
-                    MessageTokens.ERROR_UNEXPECTED_MESSAGE_TYPE));
-        }
-
-        ctx.setMessage(message);
-
-        sourceBuffer.tryDispose();
-
-        return ctx.getInvokeAction(remainder);
     }
 
     public NextAction handleWrite(final FilterChainContext ctx) throws IOException {
@@ -109,11 +113,19 @@ public class RexProMessageFilter extends BaseFilter {
 
         final ByteArrayOutputStream rexProMessageStream = new ByteArrayOutputStream();
         final Packer packer = msgpack.createPacker(rexProMessageStream);
-        packer.write(msg);
-        byte[] rexProMessageAsBytes = rexProMessageStream.toByteArray();
-        rexProMessageStream.close();
+        byte[] rexProMessageAsBytes;
 
-        final ByteBuffer bb = ByteBuffer.allocate(5 + rexProMessageAsBytes.length);
+        try {
+            packer.write(msg);
+            rexProMessageAsBytes = rexProMessageStream.toByteArray();
+        } finally {
+            packer.close();
+        }
+
+        // Retrieve the memory manager
+        final MemoryManager memoryManager =
+                ctx.getConnection().getTransport().getMemoryManager();
+        final Buffer bb = memoryManager.allocate(5 + rexProMessageAsBytes.length);
 
         if (msg instanceof SessionResponseMessage) {
             bb.put(MessageType.SESSION_RESPONSE);
@@ -132,22 +144,11 @@ public class RexProMessageFilter extends BaseFilter {
         bb.putInt(rexProMessageAsBytes.length);
         bb.put(rexProMessageAsBytes);
 
-        final byte[] messageAsBytes = bb.array();
-        final int size = messageAsBytes.length;
-
-        // Retrieve the memory manager
-        final MemoryManager memoryManager =
-                ctx.getConnection().getTransport().getMemoryManager();
-
-        // allocate the buffer of required size
-        final Buffer output = memoryManager.allocate(size);
-        output.put(messageAsBytes);
-
         // Allow Grizzly core to dispose the buffer, once it's written
-        output.allowBufferDispose(true);
+        bb.allowBufferDispose(true);
 
         // Set the Buffer as a context message
-        ctx.setMessage(output.flip());
+        ctx.setMessage(bb.flip());
 
         // Instruct the FilterChain to call the next filter
         return ctx.getInvokeAction();
