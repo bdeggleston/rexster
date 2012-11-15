@@ -4,6 +4,7 @@ import com.tinkerpop.rexster.protocol.filter.RexProMessageFilter;
 import org.glassfish.grizzly.Connection;
 import org.glassfish.grizzly.filterchain.FilterChainBuilder;
 import org.glassfish.grizzly.filterchain.TransportFilter;
+import org.glassfish.grizzly.nio.NIOConnection;
 import org.glassfish.grizzly.nio.transport.TCPNIOTransport;
 import org.glassfish.grizzly.nio.transport.TCPNIOTransportBuilder;
 import org.glassfish.grizzly.strategies.SameThreadIOStrategy;
@@ -27,20 +28,23 @@ public class RexsterClientFactory {
     }
 
     public RexsterClient createClient(final String host, final int port, int connectTimeout) throws Exception {
-        Connection connection = null;
-        RexsterClientHandler handler = new RexsterClientHandler();
-        FilterChainBuilder filterChainBuilder = FilterChainBuilder.stateless();
+
+        final RexsterClientHandler handler = new RexsterClientHandler();
+        final FilterChainBuilder filterChainBuilder = FilterChainBuilder.stateless();
         filterChainBuilder.add(new TransportFilter());
         filterChainBuilder.add(new RexProMessageFilter());
         filterChainBuilder.add(handler);
+
         final TCPNIOTransport transport = TCPNIOTransportBuilder.newInstance().build();
         transport.setIOStrategy(SameThreadIOStrategy.getInstance());
         transport.setProcessor(filterChainBuilder.build());
         transport.start();
-        Future<Connection> future = transport.connect(host, port);
-        connection = future.get(connectTimeout, TimeUnit.SECONDS);
 
-        RexsterClient client = new RexsterClient(host, port, connectTimeout, connection, transport);
+        final Future<Connection> future = transport.connect(host, port);
+        final NIOConnection connection = (NIOConnection) future.get(connectTimeout, TimeUnit.SECONDS);
+        connection.setMaxAsyncWriteQueueSize(1000000);
+
+        final RexsterClient client = new RexsterClient(connectTimeout, connection, transport);
         handler.setClient(client);
         return client;
     }
